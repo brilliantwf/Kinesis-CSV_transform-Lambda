@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This CloudFormation template creates simple Lambda functions,
+  which prints CloudFormation resource Arn from the stack.  
+
+Resources:
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - lambda.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: LambdaFunctionPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - cloudwatch:*
+            Resource: '*'     
+  IoT2S3Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs12.x
+      Timeout: 300
+      Handler: index.handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Code:
+        ZipFile: |
+              'use strict';
+              console.log('Loading function');
+              exports.handler = (event, context, callback) => {
+                  let success = 0; // Number of valid entries found
+                  let failure = 0; // Number of invalid entries found
+
+                  /* Process the list of records and transform them */
+                  const output = event.records.map((record) => {
+                      // Kinesis data is base64 encoded so decode here
+                      console.log(record.recordId);
+                      const payload = (Buffer.from(record.data, 'base64')).toString('utf8');
+                      console.log('Decoded payload:', payload);
+
+                      // Split the data into it's fields so we can refer to them by index
+                      const match = JSON.parse(payload);
+                      console.log('match payload:', match);
+                      if (match) {
+                          /* Prepare JSON version from Syslog log data */
+                          const result1 = `${match["sensor_1_AUXILIQUIDOPENING"]},${match["sensor_1_COMPCURRENT"]},${match["sensor_1_COMPEXHAUSTTEMP"]},${match["sensor_1_COMPLOAD"]},${match["sensor_1_COMPPOWER"]},${match["sensor_1_COMPRUNTIME"]},${match["sensor_1_COMPSPEED"]},${match["sensor_1_COMPSUCTIONTEMP"]},${match["sensor_1_COMPVOLTAGE"]},${match["sensor_1_CONDSIDEEXHAUSTPRESS"]},${match["sensor_1_DISCHARGESUPERHEAT"]},${match["sensor_1_ECONPRESS"]},${match["sensor_1_ECONREFRTEMP"]},${match["sensor_1_EVAPSIDESUCTIONPRESS"]},${match["sensor_1_INVERTERTEMP"]},${match["sensor_1_MAINFLOWVALVEOPENING"]},${match["sensor_1_MAINLOOPLEVEL"]},${match["sensor_2_AUXILIQUIDOPENING"]},${match["sensor_2_COMPCURRENT"]},${match["sensor_2_COMPEXHAUSTTEMP"]},${match["sensor_2_COMPLOAD"]},${match["sensor_2_COMPPOWER"]},${match["sensor_2_COMPRUNTIME"]},${match["sensor_2_COMPSPEED"]},${match["sensor_2_COMPSUCTIONTEMP"]},${match["sensor_2_COMPVOLTAGE"]},${match["sensor_2_CONDSIDEEXHAUSTPRESS"]},${match["sensor_2_DISCHARGESUPERHEAT"]},${match["sensor_2_ECONPRESS"]},${match["sensor_2_ECONREFRTEMP"]},${match["sensor_2_EVAPSIDESUCTIONPRESS"]},${match["sensor_2_INVERTERTEMP"]},${match["sensor_2_MAINFLOWVALVEOPENING"]},${match["sensor_2_MAINLOOPLEVEL"]},${match["sensor_3_AUXILIQUIDOPENING"]},${match["sensor_3_COMPCURRENT"]},${match["sensor_3_COMPEXHAUSTTEMP"]},${match["sensor_3_COMPLOAD"]},${match["sensor_3_COMPPOWER"]},${match["sensor_3_COMPRUNTIME"]},${match["sensor_3_COMPSPEED"]},${match["sensor_3_COMPSUCTIONTEMP"]},${match["sensor_3_COMPVOLTAGE"]},${match["sensor_3_CONDSIDEEXHAUSTPRESS"]},${match["sensor_3_DISCHARGESUPERHEAT"]},${match["sensor_3_ECONPRESS"]},${match["sensor_3_ECONREFRTEMP"]},${match["sensor_3_EVAPSIDESUCTIONPRESS"]},${match["sensor_3_INVERTERTEMP"]},${match["sensor_3_MAINFLOWVALVEOPENING"]},${match["sensor_3_MAINLOOPLEVEL"]},${match["SYSTEM_CONDCAPACITY"]},${match["SYSTEM_CONDSIDETEMPIN"]},${match["SYSTEM_CONDSIDETEMPOUT"]},${match["SYSTEM_EVAPCAPACITY"]},${match["SYSTEM_EVAPSIDETEMPOUT"]},${match["SYSTEM_UNITPOWER"]},${match["code"]},${match["time"]}` + "\n";
+                          console.log('result is :',result1);
+                          success++;
+                          return {
+                              recordId: record.recordId,
+                              result: 'Ok',
+                              data: (Buffer.from(result1, 'utf8')).toString('base64'),
+                          };
+                      } else {
+                          /* Failed event, notify the error and leave the record intact */
+                          failure++;
+                          return {
+                              recordId: record.recordId,
+                              result: 'ProcessingFailed',
+                              data: record.data,
+                          };
+                      }
+                  });
+                  console.log(`Processing completed.  Successful records ${success}, Failed records ${failure}.`);
+                  callback(null, { records: output });
+              };
